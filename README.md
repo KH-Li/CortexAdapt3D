@@ -1,30 +1,50 @@
 # CortexAdapt3D
 
-基于皮层表面几何与顶点属性的 dHCP 早产分类代码。每个左右半球作为一个样本，使用 `sulc`、`curv` 和 `thickness` 三个顶点属性；标签 `1` 表示早产，`0` 表示足月。本仓库整理自服务器上的 `Prompt_Tuning/Tuning/cls` 分类实验代码。
+CortexAdapt3D classifies preterm birth from dHCP cortical surface geometry and vertex attributes. Each left or right hemisphere forms one sample. The model combines surface patches with `sulc`, `curv`, and `thickness` features through a spectral adapter and a transformer encoder.
 
-## 来源与发布范围
+## Task and model
 
-本项目在 [PointGST](https://github.com/jerryfeng2003/PointGST) 基础上修改，保留其 Apache 2.0 许可证及 [署名说明](NOTICE.md)。当前发布范围是 dHCP 分类任务。原目录中的 ModelNet/ScanObjectNN 基准、补全与检测任务、未接入分类入口的回归配置和实验产物没有纳入。仓库不包含被试数据、划分文件、预训练权重或训练检查点。
+The classification target uses `1` for preterm birth and `0` for term birth. The cohort includes preterm samples scanned after 37 weeks.
 
-## 环境
+The model registry name is `CortexAdapt3D`. Its `SpectralAdapter` integrates cortical vertex attributes with patch features in the spectral domain. The configuration in [`cfgs/mae/finetune_dHCP_classification.yaml`](cfgs/mae/finetune_dHCP_classification.yaml) defines the architecture and training settings.
 
-建议使用 Python 3.9+ 和可用的 PyTorch CUDA 环境：
+## Environment
+
+Use Python 3.9 or later with a PyTorch installation suited to the available hardware. Install the project dependencies from the repository root:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-PyTorch 与 CUDA 的组合应按运行机器选择。本项目不再依赖原 PointGST 仓库中用于通用点云基准的 PointNet++、KNN CUDA、Chamfer Distance 或 EMD 扩展。
+## Data layout
 
-## 数据
+Provide a root directory containing cortical surface files with this structure:
 
-`--data-root` 下应有 `sub-<participant>/ses-<session>/anat/sub-<participant>_hemi-L_surface_ico5.vtk` 及对应右半球文件。每个表面应有 10,242 个顶点和 `sulc`、`curv`、`thickness` 顶点属性。
+```text
+<data-root>/
+└── sub-<participant>/
+    └── ses-<session>/
+        └── anat/
+            ├── sub-<participant>_hemi-L_surface_ico5.vtk
+            └── sub-<participant>_hemi-R_surface_ico5.vtk
+```
 
-`--csv-path` 是制表符分隔的被试表，至少包含 `participant_id`、`session_id`、`birth_age`、`scan_age` 列。`--split-root` 下应有 `dhcp_train_ids_seed42.txt`、`dhcp_val_ids_seed42.txt` 和 `dhcp_test_ids_seed42.txt`，每行一个样本 ID，格式为 `sub-<participant>_ses-<session>_left` 或 `_right`。三个划分不能重叠。
+Each surface has 10,242 vertices and the `sulc`, `curv`, and `thickness` vertex attributes. The participant metadata file is tab separated and contains `participant_id`, `session_id`, `birth_age`, and `scan_age` columns.
 
-## 训练与测试
+The split directory contains these files:
 
-从仓库根目录运行。训练需要兼容的 Point-MAE 预训练检查点，索引文件已随代码提供。
+```text
+<split-root>/
+├── dhcp_train_ids_seed42.txt
+├── dhcp_val_ids_seed42.txt
+└── dhcp_test_ids_seed42.txt
+```
+
+Each line holds a hemisphere sample ID, such as `sub-001_ses-01_left` or `sub-001_ses-01_right`. Use distinct IDs across the training, validation, and test splits.
+
+## Training
+
+Run the following command from the repository root with a compatible pretrained encoder checkpoint:
 
 ```bash
 python main.py \
@@ -35,7 +55,17 @@ python main.py \
   --exp-name dhcp_preterm
 ```
 
-最佳验证准确率对应的权重保存于 `experiments/finetune_dHCP_classification/dhcp_preterm/ckpt-best.pth`。仅在训练结束后使用该权重评估测试集，并导出 `metrics.csv` 和 `predictions.csv`。
+Training computes the mean and standard deviation of the three vertex attributes from the training split. The checkpoint with the highest validation accuracy is saved at:
+
+```text
+experiments/finetune_dHCP_classification/dhcp_preterm/ckpt-best.pth
+```
+
+The checkpoint includes the model weights and attribute statistics. After training, the selected checkpoint is evaluated on the test split.
+
+## Evaluation
+
+Evaluate a checkpoint produced by this training workflow:
 
 ```bash
 python main.py \
@@ -43,11 +73,8 @@ python main.py \
   --csv-path /path/to/combined_03.csv \
   --split-root /path/to/splits \
   --ckpts experiments/finetune_dHCP_classification/dhcp_preterm/ckpt-best.pth \
-  --test --exp-name dhcp_test
+  --test \
+  --exp-name dhcp_test
 ```
 
-测试检查点必须包含本项目训练时保存的三个属性的均值和标准差。原服务器中的旧检查点可能不包含这些统计量，需要重新训练或单独转换后才能使用新的测试入口。
-
-## 说明
-
-模型注册名为 `CortexAdapt3D`，谱域模块为 `SpectralAdapter`。为兼容已有预训练参数，部分内部参数键仍保留上游命名。这里不公布新的性能数字；正式结果应在相同数据划分和检查点下重新测定。
+Evaluation writes `metrics.csv` and `predictions.csv` under `experiments/finetune_dHCP_classification/dhcp_test/`. Metrics include accuracy, precision, recall, F1, ROC AUC, sensitivity, and specificity. The prediction file records each sample ID, label, predicted class, and class probabilities.
