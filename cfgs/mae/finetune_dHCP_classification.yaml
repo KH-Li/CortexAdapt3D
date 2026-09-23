@@ -1,0 +1,34 @@
+optimizer : {
+  type: AdamW,
+  kwargs: {
+  lr : 0.0001,
+  weight_decay : 0.05
+}}
+
+dataset : {
+  train : { _base_: cfgs/dataset_configs/dHCPcls.yaml,
+            others: {subset: 'train'}},
+  val : { _base_: cfgs/dataset_configs/dHCPcls.yaml,
+            others: {subset: 'val'}},
+  test : { _base_: cfgs/dataset_configs/dHCPcls.yaml,
+            others: {subset: 'test'}}}
+model : {
+  NAME: CortexAdapt3D,
+  split_index_path: './split_index_ico5_45points_320patches.npy',
+  center_index_path: './midsurface_index_ico5_45points_320patches.npy',
+  trans_dim: 384,
+  depth: 12,
+  drop_path_rate: 0.1,
+  cls_dim: 2,
+  num_heads: 6,
+  group_size: 32,
+  num_group: 640,
+  encoder_dims: 384,  
+  rank: 72,
+}
+
+
+total_bs : 64
+step_per_update : 1
+max_epoch : 300
+grad_norm_clip : 10

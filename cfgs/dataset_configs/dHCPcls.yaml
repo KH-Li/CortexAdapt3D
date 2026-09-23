@@ -1,0 +1,5 @@
+NAME: DHCPSurfaceClassification
+DATA_PATH: ./data/dhcp
+csv_path: ./data/dhcp/combined_03.csv
+SPLIT_PATH: ./data/dhcp
+N_POINTS: 10242
